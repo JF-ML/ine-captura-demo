@@ -1,0 +1,112 @@
+#ocrResult {
+
+width: 100%;
+
+height: 250px;
+
+font-size: 14px;
+
+padding: 10px;
+
+}
+#processedPreview{
+display:none;
+}
+body{
+
+font-family: Arial, sans-serif;
+background:#f4f6f8;
+margin:0;
+padding:20px;
+
+}
+
+.container{
+
+max-width:700px;
+margin:auto;
+
+}
+
+.card{
+
+background:white;
+padding:20px;
+margin-bottom:20px;
+border-radius:10px;
+box-shadow:0 2px 8px rgba(0,0,0,0.1);
+
+}
+
+h2{
+
+text-align:center;
+
+}
+
+.buttons{
+
+display:flex;
+gap:10px;
+margin-bottom:10px;
+
+}
+
+button{
+
+background:#2563eb;
+color:white;
+border:none;
+padding:10px 15px;
+border-radius:6px;
+cursor:pointer;
+
+}
+
+button:hover{
+
+background:#1e4fd1;
+
+}
+
+.previewContainer{
+
+display:flex;
+justify-content:center;
+gap:10px;
+margin-top:10px;
+
+}
+
+img, canvas{
+
+width:300px;
+border-radius:6px;
+border:1px solid #ccc;
+
+}
+
+textarea{
+
+width:100%;
+height:120px;
+margin-top:10px;
+
+}
+
+.formGrid{
+
+display:grid;
+grid-template-columns:1fr;
+gap:10px;
+margin-bottom:10px;
+
+}
+
+input{
+
+padding:10px;
+border-radius:6px;
+border:1px solid #ccc;
+
+}

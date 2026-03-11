@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Captura INE</title>
+
+<link rel="stylesheet" href="style.css">
+
+<script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script defer src="ocr.js"></script>
+<script defer src="parser.js"></script>
+<script defer src="api.js"></script>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Registro de Ciudadano</h2>
+
+<div class="card">
+
+<h3>Captura de INE</h3>
+
+<div class="buttons">
+
+<input type="file" id="imageInput" accept="image/*" capture="environment">
+
+<button onclick="openCamera()">📷 Tomar Foto</button>
+
+<button onclick="scanINE()">🔍 Escanear INE</button>
+
+</div>
+
+<div class="previewContainer">
+
+<img id="preview">
+
+<canvas id="processedPreview"></canvas>
+
+</div>
+
+</div>
+
+
+<div class="card">
+
+<button onclick="toggleText()">Mostrar / Ocultar texto OCR</button>
+
+<textarea id="ocrResult"></textarea>
+
+</div>
+
+
+<div class="card">
+
+<h3>Datos</h3>
+
+<div class="formGrid">
+
+<input id="nombre" placeholder="Nombre">
+<input id="curp" placeholder="CURP">
+<input id="clave" placeholder="Clave elector">
+
+</div>
+
+<button onclick="saveData()">Guardar registro</button>
+
+</div>
+
+</div>
+
+</body>
+
+</html>
