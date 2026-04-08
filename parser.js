@@ -1,9 +1,10 @@
 function cleanText(text){
 
 return text
+.toUpperCase()
+.replace(/[^A-Z0-9\n\s]/g," ")   // mantiene saltos de linea
+.replace(/[|]/g,"I")             // errores comunes OCR
 .replace(/O/g,"0")
-.replace(/I/g,"1")
-.replace(/[^A-Z0-9\s]/g," ")
 .replace(/\s+/g," ");
 
 }
@@ -12,37 +13,53 @@ function parseINE(text){
 
 text = cleanText(text);
 
-// CURP
-const curpMatch = text.match(/[A-Z]{4}[0-9]{6}[A-Z]{6}[0-9]{2}/);
+// dividir en lineas
+const lines = text.split("\n").map(l => l.trim()).filter(l => l.length>0);
+
+/* ---------------- CURP ---------------- */
+
+const curpRegex = /[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[0-9]{2}/;
+const curpMatch = text.match(curpRegex);
 
 if(curpMatch){
 document.getElementById("curp").value = curpMatch[0];
 }
 
-// CLAVE ELECTOR
-const claveMatch = text.match(/[A-Z]{6}[0-9]{8}[A-Z0-9]{3}/);
+/* ---------------- CLAVE ELECTOR ---------------- */
+
+const claveRegex = /[A-Z]{6}[0-9]{6}[A-Z0-9]{6}/;
+const claveMatch = text.match(claveRegex);
 
 if(claveMatch){
 document.getElementById("clave").value = claveMatch[0];
 }
 
-// NOMBRE
-const lines = text.split("\n");
+/* ---------------- NOMBRE ---------------- */
 
-let palabras = [];
+let candidatos = [];
 
 lines.forEach(line=>{
 
-if(line.match(/^[A-Z]{4,}$/)){
-palabras.push(line.trim());
+if(
+line.length > 3 &&
+line.length < 25 &&
+/^[A-Z\s]+$/.test(line) &&
+!line.includes("INSTITUTO") &&
+!line.includes("ELECTORAL") &&
+!line.includes("DOMICILIO") &&
+!line.includes("ADDRESS")
+){
+candidatos.push(line);
 }
 
 });
 
-if(palabras.length>=3){
+// si encontramos 3 lineas seguidas que parecen nombre
+if(candidatos.length >= 3){
 
-document.getElementById("nombre").value =
-palabras[2]+" "+palabras[0]+" "+palabras[1];
+const nombre = candidatos.slice(0,3).join(" ");
+
+document.getElementById("nombre").value = nombre;
 
 }
 

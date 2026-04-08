@@ -2,14 +2,12 @@ function toggleText(){
 
 const textarea = document.getElementById("ocrResult");
 
-if(textarea.style.display==="none"){
+const isHidden = window.getComputedStyle(textarea).display === "none";
 
-textarea.style.display="block";
-
+if(isHidden){
+textarea.style.display = "block";
 }else{
-
-textarea.style.display="none";
-
+textarea.style.display = "none";
 }
 
 }
@@ -31,16 +29,15 @@ return;
 const processedCanvas = await preprocessImage(file);
 
 // OCR
-const worker = await Tesseract.createWorker({
-logger: m => console.log(m)
-});
+const worker = await Tesseract.createWorker();
 
 await worker.loadLanguage('spa');
 await worker.initialize('spa');
+
 await worker.setParameters({
-tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ",
-preserve_interword_spaces: "1"
+tessedit_pageseg_mode: "6"
 });
+
 const { data: { text } } = await worker.recognize(processedCanvas);
 
 document.getElementById("ocrResult").value = text;
