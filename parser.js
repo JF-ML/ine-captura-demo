@@ -1,251 +1,215 @@
+// ── Municipios de Campeche ──
+const MUNICIPIOS_CAMPECHE = [
+  "CALAKMUL","XPUJIL","CALKINI","CAMPECHE","SAN FRANCISCO DE CAMPECHE",
+  "CANDELARIA","CARMEN","CIUDAD DEL CARMEN","CHAMPOTON","DZITBALCHE",
+  "ESCARCEGA","HECELCHAKAN","HOPELCHEN","PALIZADA","SEYBAPLAYA","TENABO"
+];
+
+function stripAccents(s){
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+
+// Levenshtein distance for proper fuzzy matching
+function levenshtein(a, b){
+  const m = a.length, n = b.length;
+  const dp = Array.from({length: m+1}, (_,i) => [i, ...Array(n).fill(0)]);
+  for(let j = 0; j <= n; j++) dp[0][j] = j;
+  for(let i = 1; i <= m; i++)
+    for(let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function similarity(a, b){
+  a = stripAccents(a.toUpperCase());
+  b = stripAccents(b.toUpperCase());
+  if(a === b) return 1;
+  const dist = levenshtein(a, b);
+  return 1 - dist / Math.max(a.length, b.length);
+}
+
+function matchMunicipio(raw){
+  if(!raw || raw.length < 3) return "";
+  const words = stripAccents(raw.toUpperCase()).split(/\s+/).filter(w => w.length >= 4);
+  let best = "", bestScore = 0.75; // raised threshold — avoids false matches
+
+  for(const mun of MUNICIPIOS_CAMPECHE){
+    const munClean = stripAccents(mun);
+    // Full string match
+    const s1 = similarity(raw, mun);
+    if(s1 > bestScore){ bestScore = s1; best = mun; }
+    // Word-by-word — only consider words long enough to be meaningful
+    for(const word of words){
+      if(word.length < munClean.length * 0.6) continue; // skip too-short words
+      const s2 = similarity(word, munClean);
+      if(s2 > bestScore){ bestScore = s2; best = mun; }
+    }
+  }
+  // Return in ALL CAPS for sheet consistency
+  return best;
+}
+
+// ── Normalize common OCR misreads of INE keywords ──
+function normalizeKeywords(text){
+  return text
+    // NOMBRE variants
+    .replace(/\b[IJ][A-Z]?OMBRE\b/g,           "NOMBRE")
+    .replace(/\bNOM[B8]RE\b/g,                  "NOMBRE")
+    // DOMICILIO variants
+    .replace(/\b[VJUB]OMICILIO\b/g,             "DOMICILIO")
+    .replace(/\bDOMICI[L1][I1]O\b/g,            "DOMICILIO")
+    .replace(/\bD0MICILIO\b/g,                  "DOMICILIO")
+    // CLAVE DE ELECTOR variants
+    .replace(/\bC[O0]N[VU][EF][UW][EF][ ]?ELECTOR\b/g, "CLAVE ELECTOR")
+    .replace(/\bCLA[VU][EF][ ]?(DE[ ]?)?ELECTOR\b/g,    "CLAVE ELECTOR")
+    .replace(/\bCLAVE[ ]?ELECT[O0]R\b/g,       "CLAVE ELECTOR")
+    // CURP
+    .replace(/\bCUR[P9]\b/g,                    "CURP")
+    // MUNICIPIO
+    .replace(/\bMUN[I1]C[I1]P[I1]O\b/g,        "MUNICIPIO")
+    // VIGENCIA / SECCION
+    .replace(/\bV[I1]GENC[I1]A\b/g,            "VIGENCIA")
+    .replace(/\bSECC[I1][O0]N\b/g,             "SECCION");
+}
+
 function cleanText(text){
-
-return text
-.toUpperCase()
-.replace(/[^A-Z0-9\n\s]/g," ")   // mantiene saltos de linea
-.replace(/[|]/g,"I")
-.replace(/O/g,"0")
-.replace(/[ \t]+/g," ")          // SOLO espacios (no \n)
-.replace(/\n+/g,"\n");           // limpia saltos múltiples
-
+  return text
+    .toUpperCase()
+    .replace(/[|¡!]/g, "I")
+    .replace(/[^A-Z0-9\n\s]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n+/g, "\n")
+    .trim();
 }
 
-
-// 🔍 reconstruye estructura si viene todo en una línea
 function normalizeStructure(text){
-
-return text.replace(
-/(NOMBRE|JOMBRE|NAME|DOMICILIO|ADDRESS|CURP)/g,
-"\n$1\n"
-);
-
+  return text.replace(
+    /\b(NOMBRE|DOMICILIO|CLAVE ELECTOR|CLAVE|CURP|FECHA|SECCION|VIGENCIA|LOCALIDAD|MUNICIPIO|EMISION)\b/g,
+    "\n$1\n"
+  );
 }
 
+const NOISE_WORDS = [
+  "INSTITUTO","NACIONAL","FEDERAL","ELECTORAL","CREDENCIAL","VOTAR",
+  "MEXICO","SEXO","REGISTRO","NACIMIENTO","SECCION","VIGENCIA",
+  "EMISION","FOLIO","MUESTRA","INE","IFE","ELECTOR","CLAVE"
+];
+function isNoiseLine(l){ return NOISE_WORDS.some(w => l.includes(w)); }
 
-// 🔍 extraer nombre por bloques + fallback
+function numericVersion(text){
+  return text
+    .toUpperCase()
+    .replace(/[|¡!]/g,"I")
+    .replace(/O/g,"0")
+    .replace(/[^A-Z0-9\n\s]/g," ");
+}
+
 function extractNombre(lines){
+  const ni = lines.findIndex(l => l === "NOMBRE");
+  const di = lines.findIndex(l => l === "DOMICILIO");
 
-const nombreKeys = ["NOMBRE","JOMBRE","NOM8RE","NAME"];
-const domicilioKeys = ["DOMICILIO","ADDRESS","DOMICIL10"];
+  if(ni !== -1){
+    const end = di !== -1 ? di : Math.min(ni+6, lines.length);
+    const block = lines.slice(ni+1, end)
+      .map(l => l.replace(/[^A-ZÁÉÍÓÚÑ\s]/g,"").trim())
+      .filter(l => l.length > 2 && !isNoiseLine(l) && /[A-Z]{2,}/.test(l));
+    if(block.length) return block.slice(0,3).join(" ");
+  }
 
-let start = -1;
-let end = -1;
-
-// buscar inicio
-for(let i=0;i<lines.length;i++){
-for(let key of nombreKeys){
-if(lines[i].includes(key)){
-start = i;
-break;
-}
-}
-if(start !== -1) break;
-}
-
-// buscar fin
-if(start !== -1){
-for(let i=start+1;i<lines.length;i++){
-for(let key of domicilioKeys){
-if(lines[i].includes(key)){
-end = i;
-break;
-}
-}
-if(end !== -1) break;
-}
+  // Fallback: consecutive pure-letter lines before DOMICILIO
+  const cutoff = di !== -1 ? di : lines.length;
+  const candidates = lines.slice(0, cutoff).filter(l => {
+    const t = l.trim();
+    return /^[A-ZÁÉÍÓÚÑ\s]{3,35}$/.test(t) && !isNoiseLine(t) && t.split(" ").length <= 5 && t.length > 3;
+  });
+  return candidates.slice(0,3).join(" ");
 }
 
-// fallback si no encuentra domicilio
-if(start !== -1 && end === -1){
-end = start + 5;
-}
-
-// si encontró bloque
-if(start !== -1){
-
-let nombreLines = lines.slice(start+1, end);
-
-nombreLines = nombreLines
-.map(l => l.replace(/[^A-Z\s]/g,"").trim())
-.filter(l => l.length > 2 && l.length < 25);
-
-if(nombreLines.length){
-return nombreLines.slice(0,3);
-}
-
-}
-
-
-// 🔥 DETECCIÓN DENTRO DE LÍNEAS (muy importante)
-for(let line of lines){
-
-const posibles = line.match(/[A-Z]{3,}/g); // ahora mínimo 3 letras
-
-if(posibles && posibles.length){
-
-// filtrar basura tipo AAA
-const filtrados = posibles.filter(p => !/(.)\1\1/.test(p));
-
-if(filtrados.length){
-return filtrados.slice(0,3);
-}
-
-}
-
-}
-
-
-// 🔥 FALLBACK (líneas en mayúsculas filtradas)
-
-let candidatos = lines.filter(line => {
-
-const clean = line.replace(/\s/g,"");
-
-// mínimo 3 letras seguidas
-const tienePalabraReal = /[A-Z]{3,}/.test(clean);
-
-// evitar ruido tipo "X S S"
-const pocasSeparaciones = (line.split(" ").length <= 3);
-
-// evitar AAA, BBB
-const noRepetidas = !/(.)\1\1/.test(clean);
-
-// evitar palabras del INE
-const noRuido = !line.includes("INSTITUTO") &&
-!line.includes("ELECTORAL") &&
-!line.includes("DOMICILIO") &&
-!line.includes("ADDRESS") &&
-!line.includes("CURP");
-
-return (
-line.length > 3 &&
-line.length < 25 &&
-/^[A-Z\s]+$/.test(line) &&
-tienePalabraReal &&
-pocasSeparaciones &&
-noRepetidas &&
-noRuido
-);
-
-});
-
-if(candidatos.length >= 3){
-return candidatos.slice(0,3);
-}
-
-return [];
-
-}
 function extractDireccion(lines){
+  const di = lines.findIndex(l => l === "DOMICILIO");
+  const endRx = /^(CLAVE|CURP|MUNICIPIO|LOCALIDAD|SECCION|VIGENCIA|EMISION|FECHA)/;
 
-const inicioKeys = ["DOMICILIO","ADDRESS","DOMICIL10"];
-const finKeys = ["CLAVE","CURP","FECHA","SECCION","VIGENCIA"];
-
-let start = -1;
-let end = -1;
-
-// buscar inicio
-for(let i=0;i<lines.length;i++){
-for(let key of inicioKeys){
-if(lines[i].includes(key)){
-start = i;
-break;
-}
-}
-if(start !== -1) break;
+  if(di !== -1){
+    const block = [];
+    for(let i = di+1; i < lines.length; i++){
+      if(endRx.test(lines[i])) break;
+      const clean = lines[i].replace(/[^A-Z0-9\s]/g,"").trim();
+      if(clean.length > 2 && !isNoiseLine(clean)) block.push(clean);
+      if(block.length >= 3) break;
+    }
+    return block.join(", ");
+  }
+  return "";
 }
 
-// buscar fin
-if(start !== -1){
-for(let i=start+1;i<lines.length;i++){
-for(let key of finKeys){
-if(lines[i].includes(key)){
-end = i;
-break;
-}
-}
-if(end !== -1) break;
-}
-}
-
-// fallback
-if(start !== -1 && end === -1){
-end = start + 4;
-}
-
-if(start !== -1){
-
-let direccionLines = lines.slice(start+1,end);
-
-direccionLines = direccionLines
-.map(l => l.replace(/[^A-Z0-9\s]/g,"").trim())
-.filter(l => l.length > 2);
-
-return direccionLines.join(" ");
+function extractMunicipio(lines){
+  // Look for a line containing a 5-digit postal code
+  // Municipio name is often on the same line or next line
+  for(let i = 0; i < lines.length; i++){
+    if(/\d{5}/.test(lines[i])){
+      // Try same line first (e.g. "FRACC FOVI 24030 CAMPECHE")
+      const sameLine = lines[i].replace(/\d+/g," ").replace(/[^A-ZÁÉÍÓÚÑ\s]/g," ").trim();
+      const matched = matchMunicipio(sameLine);
+      if(matched) return matched;
+      // Try next line
+      if(lines[i+1]){
+        const nextLine = lines[i+1].replace(/[^A-ZÁÉÍÓÚÑ\s]/g," ").trim();
+        const matched2 = matchMunicipio(nextLine);
+        if(matched2) return matched2;
+      }
+    }
+  }
+  // Fallback: scan every line for a municipio match
+  for(const line of lines){
+    const m = matchMunicipio(line);
+    if(m) return m;
+  }
+  return "";
 }
 
-return "";
-}
+function parseINE(rawText){
+  // Step 1: normalize keywords on raw text first
+  let text = normalizeKeywords(rawText.toUpperCase());
 
-function parseINE(text){
+  // Step 2: numeric version for code fields
+  const numText = numericVersion(text);
 
-// limpiar
-text = cleanText(text);
+  // Step 3: clean and structure for name/address
+  text = cleanText(text);
+  text = normalizeStructure(text);
+  const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-// reconstruir estructura si viene plano
-text = normalizeStructure(text);
+  console.log("=== INE PARSE DEBUG ===");
+  console.log("LINES:", lines);
 
-// dividir en líneas
-const lines = text
-.split("\n")
-.map(l => l.trim())
-.filter(l => l.length > 0);
+  /* ── CURP ──
+     Tolerant: last char can be digit OR letter (OCR often misreads final digit) */
+  const curpRx = /[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9][A-Z0-9]/;
+  const curpMatch = numText.match(curpRx) || text.match(curpRx);
+  if(curpMatch) document.getElementById("curp").value = curpMatch[0];
 
+  /* ── CLAVE DE ELECTOR ──
+     6 letters + 6 digits + 2 digits + 1 letter + 3 digits */
+  const claveRx = /[A-Z]{6}\d{6}\d{2}[A-Z]\d{3}/;
+  const claveMatch = numText.match(claveRx) || text.match(claveRx);
+  if(claveMatch) document.getElementById("clave").value = claveMatch[0];
 
-/* ---------------- CURP ---------------- */
+  /* ── NOMBRE ── */
+  const nombre = extractNombre(lines);
+  if(nombre) document.getElementById("nombre").value = nombre;
 
-// más tolerante
-const curpRegex = /[A-Z]{4}[0-9]{6}[A-Z][A-Z]{5}[0-9]{2}/;
-const curpMatch = text.match(curpRegex);
+  /* ── DIRECCIÓN ── */
+  const direccion = extractDireccion(lines);
+  if(direccion) document.getElementById("direccion").value = direccion;
 
-if(curpMatch){
-document.getElementById("curp").value = curpMatch[0];
-}
+  /* ── MUNICIPIO ── */
+  const municipio = extractMunicipio(lines);
+  if(municipio) document.getElementById("municipio").value = municipio;
 
-
-/* ---------------- CLAVE ELECTOR ---------------- */
-
-const claveRegex = /[A-Z]{6}[0-9]{6}[A-Z0-9]{6}/;
-const claveMatch = text.match(claveRegex);
-
-if(claveMatch){
-document.getElementById("clave").value = claveMatch[0];
-}
-
-
-/* ---------------- NOMBRE ---------------- */
-
-const nombreParts = extractNombre(lines);
-
-if(nombreParts.length){
-document.getElementById("nombre").value = nombreParts.join(" ");
-}
-
-/* ---------------- DIRECCION ---------------- */
-
-const direccion = extractDireccion(lines);
-
-if(direccion){
-document.getElementById("direccion").value = direccion;
-}
-
-/* ---------------- DEBUG (opcional) ---------------- */
-
-console.log("TEXT:", text);
-console.log("LINES:", lines);
-console.log("NOMBRE DETECTADO:", nombreParts);
-
-
-
-
+  console.log("NOMBRE:", nombre);
+  console.log("DIRECCIÓN:", direccion);
+  console.log("MUNICIPIO:", municipio);
+  console.log("CURP:", curpMatch?.[0]);
+  console.log("CLAVE:", claveMatch?.[0]);
 }

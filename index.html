@@ -1,81 +1,450 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="es">
 <head>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Captura INE</title>
-
 <link rel="stylesheet" href="style.css">
-
 <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 <script defer src="ocr.js"></script>
 <script defer src="parser.js"></script>
 <script defer src="api.js"></script>
 
-</head>
+<style>
+/* ── Modal de cámara ── */
+#cameraModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 1000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+#cameraModal.active { display: flex; }
 
+#cameraInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 20px;
+}
+
+/* Marco con proporción de INE (85.6mm × 54mm ≈ 1.585) */
+#scannerWrap {
+  position: relative;
+  width: min(88vw, 400px);
+  aspect-ratio: 1.585;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+#cameraVideo {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Zonas oscuras fuera del marco */
+.dim { position: absolute; background: rgba(0,0,0,0.6); }
+#dimTop    { top:0; left:0; right:0; height:8%; }
+#dimBottom { bottom:0; left:0; right:0; height:8%; }
+#dimLeft   { top:8%; bottom:8%; left:0; width:5%; }
+#dimRight  { top:8%; bottom:8%; right:0; width:5%; }
+
+/* Borde del marco */
+#frameBorder {
+  position: absolute;
+  top:8%; left:5%; right:5%; bottom:8%;
+  border: 2px solid rgba(255,255,255,0.8);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* Esquinas azules */
+.corner {
+  position: absolute;
+  width: 20px; height: 20px;
+  border-color: #29b6f6;
+  border-style: solid;
+  border-width: 0;
+}
+.corner.tl { top:-1px; left:-1px;   border-top-width:3px;    border-left-width:3px;   border-top-left-radius:8px; }
+.corner.tr { top:-1px; right:-1px;  border-top-width:3px;    border-right-width:3px;  border-top-right-radius:8px; }
+.corner.bl { bottom:-1px; left:-1px;  border-bottom-width:3px; border-left-width:3px;   border-bottom-left-radius:8px; }
+.corner.br { bottom:-1px; right:-1px; border-bottom-width:3px; border-right-width:3px;  border-bottom-right-radius:8px; }
+
+/* Línea de escaneo animada */
+#scanLine {
+  position: absolute;
+  left:5%; right:5%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #29b6f6, transparent);
+  box-shadow: 0 0 8px #29b6f6;
+  animation: scan 2s ease-in-out infinite;
+}
+@keyframes scan {
+  0%   { top: 9%;  opacity: 1; }
+  90%  { top: 90%; opacity: 1; }
+  100% { top: 90%; opacity: 0; }
+}
+
+#cameraGuide {
+  color: #ccc;
+  font-size: 0.88rem;
+  font-family: system-ui, sans-serif;
+  text-align: center;
+}
+
+#cameraControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(88vw, 400px);
+}
+
+/* Botón circular de captura */
+#captureBtn {
+  width: 68px; height: 68px;
+  border-radius: 50%;
+  background: #fff;
+  border: 4px solid #29b6f6;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 0 0 4px rgba(41,182,246,0.3);
+  transition: transform 0.1s;
+  flex-shrink: 0;
+}
+#captureBtn:active { transform: scale(0.92); }
+#captureBtn::after {
+  content:'';
+  position:absolute;
+  inset:6px;
+  border-radius:50%;
+  background:#29b6f6;
+}
+
+#cancelCameraBtn {
+  background: transparent;
+  border: 1px solid #555;
+  color: #ccc;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: system-ui, sans-serif;
+}
+
+/* Spacer para centrar el botón de captura */
+.cam-spacer { width: 80px; }
+</style>
+</head>
 <body>
 
+<!-- ── Modal de cámara (solo móvil) ── -->
+<div id="cameraModal">
+  <div id="cameraInner">
+
+    <div id="scannerWrap">
+      <video id="cameraVideo" autoplay playsinline></video>
+      <div class="dim" id="dimTop"></div>
+      <div class="dim" id="dimBottom"></div>
+      <div class="dim" id="dimLeft"></div>
+      <div class="dim" id="dimRight"></div>
+      <div id="frameBorder">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+      <div id="scanLine"></div>
+    </div>
+
+    <p id="cameraGuide">Alinea tu INE dentro del marco</p>
+
+    <div id="cameraControls">
+      <button id="cancelCameraBtn" onclick="closeCamera()">✕ Cancelar</button>
+      <button id="captureBtn" title="Capturar" onclick="captureFromCamera()"></button>
+      <div class="cam-spacer"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Contenido principal ── -->
 <div class="container">
+  <h2>Registro de Ciudadano</h2>
 
-<h2>Registro de Ciudadano</h2>
+  <div class="card">
+    <h3>Captura de INE</h3>
+    <div class="buttons">
+      <!-- input sin capture — se controla por JS -->
+      <input type="file" id="imageInput" accept="image/*" style="display:none">
+      <button onclick="openCamera()">📷 Tomar Foto</button>
+      <button onclick="openGallery()">🖼 Subir Imagen</button>
+      <button onclick="scanINE()">🔍 Escanear INE</button>
+    </div>
+    <div class="previewContainer">
+      <div style="position:relative;display:inline-block;">
+        <img id="preview">
+        <!-- Crop overlay canvas, shown on top of preview -->
+        <canvas id="cropOverlay" style="display:none;position:absolute;top:0;left:0;cursor:crosshair;border-radius:6px;"></canvas>
+      </div>
+      <canvas id="processedPreview"></canvas>
+    </div>
 
-<div class="card">
+    <div id="cropControls" style="display:none;gap:10px;margin-top:10px;flex-wrap:wrap;">
+      <button id="cropBtn"   onclick="startCrop()">✂️ Recortar imagen</button>
+      <button id="confirmBtn" onclick="confirmCrop()" style="display:none;background:#16a34a;">✔ Confirmar recorte</button>
+      <button id="undoBtn"   onclick="undoCrop()"    style="display:none;background:#dc2626;">↩ Deshacer recorte</button>
+    </div>
+  </div>
 
-<h3>Captura de INE</h3>
+  <div class="card">
+    <button onclick="toggleText()">Mostrar / Ocultar texto OCR</button>
+    <textarea id="ocrResult" placeholder="El texto detectado aparecerá aquí..."></textarea>
+  </div>
 
-<div class="buttons">
-
-<input type="file" id="imageInput" accept="image/*" capture="environment">
-
-<button onclick="openCamera()">📷 Tomar Foto</button>
-
-<button onclick="scanINE()">🔍 Escanear INE</button>
-
+  <div class="card">
+    <h3>Datos</h3>
+    <div class="formGrid">
+      <input id="nombre"    placeholder="Nombre completo">
+      <input id="direccion" placeholder="Dirección">
+      <input id="municipio" placeholder="Municipio">
+      <input id="clave"     placeholder="Clave de elector">
+      <input id="curp"      placeholder="CURP">
+      <input id="telefono"  placeholder="Teléfono">
+      <input id="email"     placeholder="Correo electrónico">
+    </div>
+    <button onclick="saveData()">💾 Guardar registro</button>
+  </div>
 </div>
 
-<div class="previewContainer">
+<script>
+const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+let cameraStream  = null;
+let originalSrc   = null;  // stores pre-crop image for undo
+let cropActive    = false;
+let cropStart     = null;
+let cropRect      = null;
 
-<img id="preview">
+// ── Camera functions ──
+function openCamera(){
+  if(isMobile){ openCameraModal(); }
+  else {
+    const inp = document.getElementById("imageInput");
+    inp.setAttribute("capture","environment");
+    inp.click();
+  }
+}
 
-<canvas id="processedPreview"></canvas>
+function openGallery(){
+  const inp = document.getElementById("imageInput");
+  inp.removeAttribute("capture");
+  inp.click();
+}
 
-</div>
+async function openCameraModal(){
+  document.getElementById("cameraModal").classList.add("active");
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080} }
+    });
+    document.getElementById("cameraVideo").srcObject = cameraStream;
+  } catch(e){
+    alert("No se pudo acceder a la cámara. Verifica los permisos.");
+    closeCamera();
+  }
+}
 
-</div>
+function closeCamera(){
+  if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null; }
+  document.getElementById("cameraModal").classList.remove("active");
+  document.getElementById("cameraVideo").srcObject = null;
+}
 
+function captureFromCamera(){
+  const video = document.getElementById("cameraVideo");
+  const wrap  = document.getElementById("scannerWrap");
+  const wrapW = wrap.clientWidth, wrapH = wrap.clientHeight;
+  const vw = video.videoWidth,   vh = video.videoHeight;
+  const padT=0.08,padB=0.08,padL=0.05,padR=0.05;
+  const sx = padL*wrapW*(vw/wrapW), sy = padT*wrapH*(vh/wrapH);
+  const sw = (1-padL-padR)*wrapW*(vw/wrapW);
+  const sh = (1-padT-padB)*wrapH*(vh/wrapH);
+  const tmp = document.createElement("canvas");
+  tmp.width=sw; tmp.height=sh;
+  tmp.getContext("2d").drawImage(video,sx,sy,sw,sh,0,0,sw,sh);
+  const preview = document.getElementById("preview");
+  preview.src = tmp.toDataURL("image/jpeg",0.95);
+  preview.style.display = "block";
+  document.getElementById("processedPreview").style.display = "none";
+  tmp.toBlob(blob=>{
+    const file = new File([blob],"ine-captura.jpg",{type:"image/jpeg"});
+    const dt = new DataTransfer(); dt.items.add(file);
+    document.getElementById("imageInput").files = dt.files;
+  },"image/jpeg",0.95);
+  closeCamera();
+  showCropControls();
+}
 
-<div class="card">
+// ── Preview & crop controls ──
+function showCropControls(){
+  const cc = document.getElementById("cropControls");
+  cc.style.display = "flex";
+  document.getElementById("cropBtn").style.display    = "inline-block";
+  document.getElementById("confirmBtn").style.display = "none";
+  document.getElementById("undoBtn").style.display    = "none";
+  cropActive = false; cropRect = null;
+  hideCropOverlay();
+}
 
-<button onclick="toggleText()">Mostrar / Ocultar texto OCR</button>
+function hideCropControls(){
+  document.getElementById("cropControls").style.display = "none";
+  hideCropOverlay();
+  cropActive = false; cropRect = null;
+}
 
-<textarea id="ocrResult"></textarea>
+function hideCropOverlay(){
+  const ov = document.getElementById("cropOverlay");
+  ov.style.display = "none";
+  ov.onmousedown = ov.ontouchstart = null;
+}
 
-</div>
+// ── Crop logic ──
+function startCrop(){
+  const preview = document.getElementById("preview");
+  const overlay = document.getElementById("cropOverlay");
 
+  // Size overlay to match displayed image
+  overlay.width  = preview.clientWidth;
+  overlay.height = preview.clientHeight;
+  overlay.style.width  = preview.clientWidth  + "px";
+  overlay.style.height = preview.clientHeight + "px";
+  overlay.style.display = "block";
 
-<div class="card">
+  cropActive = true; cropRect = null;
+  document.getElementById("confirmBtn").style.display = "none";
 
-<h3>Datos</h3>
+  const ctx = overlay.getContext("2d");
 
-<div class="formGrid">
+  function getPos(e){
+    const r = overlay.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  }
 
-<input id="nombre" placeholder="Nombre">
-<input id="direccion" placeholder="Dirección">
-<input id="municipio" placeholder="Municipio">
-<input id="clave" placeholder="Clave elector">
-<input id="curp" placeholder="CURP">
-<input id="telefono" placeholder="Teléfono">
-<input id="email" placeholder="Email">
+  function onStart(e){
+    e.preventDefault();
+    cropStart = getPos(e);
+    cropRect  = null;
+  }
 
-</div>
+  function onMove(e){
+    e.preventDefault();
+    if(!cropStart) return;
+    const cur = getPos(e);
+    cropRect = {
+      x: Math.min(cropStart.x, cur.x),
+      y: Math.min(cropStart.y, cur.y),
+      w: Math.abs(cur.x - cropStart.x),
+      h: Math.abs(cur.y - cropStart.y)
+    };
+    // Draw selection
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fillRect(0,0,overlay.width,overlay.height);
+    ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+    ctx.strokeStyle = "#29b6f6";
+    ctx.lineWidth   = 2;
+    ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+  }
 
-<button onclick="saveData()">Guardar registro</button>
+  function onEnd(e){
+    e.preventDefault();
+    cropStart = null;
+    if(cropRect && cropRect.w > 10 && cropRect.h > 10){
+      document.getElementById("confirmBtn").style.display = "inline-block";
+    }
+  }
 
-</div>
+  overlay.onmousedown  = onStart;
+  overlay.onmousemove  = onMove;
+  overlay.onmouseup    = onEnd;
+  overlay.ontouchstart = onStart;
+  overlay.ontouchmove  = onMove;
+  overlay.ontouchend   = onEnd;
+}
 
-</div>
+function confirmCrop(){
+  if(!cropRect || cropRect.w < 10 || cropRect.h < 10) return;
+
+  const preview = document.getElementById("preview");
+  const overlay = document.getElementById("cropOverlay");
+
+  // Save original for undo
+  originalSrc = preview.src;
+
+  // Scale crop rect from display size to natural image size
+  const scaleX = preview.naturalWidth  / preview.clientWidth;
+  const scaleY = preview.naturalHeight / preview.clientHeight;
+
+  const sx = cropRect.x * scaleX, sy = cropRect.y * scaleY;
+  const sw = cropRect.w * scaleX, sh = cropRect.h * scaleY;
+
+  const tmp = document.createElement("canvas");
+  tmp.width=sw; tmp.height=sh;
+  tmp.getContext("2d").drawImage(preview, sx,sy,sw,sh, 0,0,sw,sh);
+
+  const croppedSrc = tmp.toDataURL("image/jpeg", 0.95);
+  preview.src = croppedSrc;
+
+  // Update the file input with cropped image
+  tmp.toBlob(blob=>{
+    const file = new File([blob],"ine-recortada.jpg",{type:"image/jpeg"});
+    const dt = new DataTransfer(); dt.items.add(file);
+    document.getElementById("imageInput").files = dt.files;
+  },"image/jpeg",0.95);
+
+  // Update UI
+  hideCropOverlay();
+  cropActive = false; cropRect = null;
+  document.getElementById("cropBtn").style.display    = "inline-block";
+  document.getElementById("confirmBtn").style.display = "none";
+  document.getElementById("undoBtn").style.display    = "inline-block";
+}
+
+function undoCrop(){
+  if(!originalSrc) return;
+  const preview = document.getElementById("preview");
+  preview.src = originalSrc;
+
+  // Restore original file
+  fetch(originalSrc)
+    .then(r=>r.blob())
+    .then(blob=>{
+      const file = new File([blob],"ine-original.jpg",{type:"image/jpeg"});
+      const dt = new DataTransfer(); dt.items.add(file);
+      document.getElementById("imageInput").files = dt.files;
+    });
+
+  originalSrc = null;
+  document.getElementById("undoBtn").style.display   = "none";
+  document.getElementById("cropBtn").style.display   = "inline-block";
+  hideCropOverlay();
+}
+
+// ── File input change ──
+document.getElementById("imageInput").addEventListener("change", function(e){
+  resetPreview();
+  previewImage(e);
+  showCropControls();
+});
+</script>
 
 </body>
-
 </html>
